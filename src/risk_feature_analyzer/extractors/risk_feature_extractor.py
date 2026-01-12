@@ -139,3 +139,40 @@ def iterative_rule_discovery(rule_discovery_chain,
 
     return new_rule_objects, list(discovered_rules)
 
+def matching_rules(rule_discovery_chain: Any, evidence_text: str, rules: List[str]) -> List[Dict[str, Any]]:
+    """
+    Ask the rule discovery chain to produce new rules given a batch of examples and existing rules.
+    Returns a list of rule objects (dicts). Raises ValueError on invalid / unexpected LLM output.
+    """
+    try:
+        response = rule_discovery_chain.invoke({
+            "evidence_text": evidence_text,
+            "rules": rules,
+        })
+    except Exception as e:
+        logger.exception("Error invoking matching_rules_chain")
+        raise ValueError(f"Chain invocation failed: {type(e).__name__}: {e}")
+
+    # Normalize response to string
+    if hasattr(response, "content"):
+        response_text = response.content
+    elif isinstance(response, dict):
+        response_text = response.get("text") or response.get("output") or str(response)
+    else:
+        response_text = str(response)
+        
+    response_text = _strip_code_fence(response_text)
+
+    try:
+        parsed = json.loads(response_text)
+    except JSONDecodeError as e:
+        logger.warning("LLM returned invalid JSON for rule discovery", exc_info=False)
+        raise ValueError(f"LLM returned invalid JSON: {e}\n\nRaw output:\n{response_text}")
+
+    matched_rules = parsed.get("matched_rules")
+    if matched_rules is None:
+        raise ValueError("JSON parsed but missing 'matched_rules' field")
+    if not isinstance(matched_rules, list):
+        raise ValueError("'new_rules' must be a list")
+
+    return matched_rules, None
